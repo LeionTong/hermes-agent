@@ -126,3 +126,26 @@ async def test_resuming_the_old_conversation_on_the_chat_makes_it_writable_again
     assert (_refused(authority, viewer, a), _refused(authority, viewer, b)) == (writable, read_only)
     assert authority.register(chat) == a  # the chat's next message lands in A again
     assert (_refused(authority, viewer, a), _refused(authority, viewer, b)) == (writable, read_only)
+
+
+@pytest.mark.asyncio
+async def test_a_cross_chat_resume_keeps_a_view_on_the_old_route_read_only_until_it_moves(served):
+    """An admin's ``/resume --all`` in another chat names A on that chat's route, but A's mount still
+    sits on its first chat's route, which names B: a turn or a Stop through it would act on B. It stays
+    read-only until the resuming chat publishes A, which moves the mount onto its own route."""
+    runner, authority, adapter = await _start(*served)
+    runner._resume_caller_is_admin = lambda source: True  # only an admin's --all crosses chats
+    viewer = _viewer(authority)
+    chat, other_chat = _chat(adapter), _chat(adapter, '777')
+    a = authority.register(chat)
+    authority.db.set_session_title(a.session_id, 'First chat')
+    authority.authorize(viewer, a, 'session:submit')
+    await _command(runner, chat, '/new')
+    b = authority.register(chat)
+    authority.register(other_chat)
+
+    assert 'First chat' in await _command(runner, other_chat, '/resume First chat --all')
+    writable, read_only = dict.fromkeys(_WRITES, 'accepted'), dict.fromkeys(_WRITES, 'session_superseded')
+    assert _refused(authority, viewer, a) == read_only
+    assert authority.register(other_chat) == a  # the other chat's next message publishes A there
+    assert (_refused(authority, viewer, a), _refused(authority, viewer, b)) == (writable, writable)

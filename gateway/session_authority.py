@@ -283,11 +283,13 @@ class SessionAuthority:
         ``/resume``, ``/handoff``). Every other live session on the route (a view kept open, a cold
         history mount, a local chat handed off earlier) is another conversation's, so nothing
         route-keyed acts through it: it goes read-only
-        (``superseded``, gateway/session_route_recovery.py). *sid*'s own becomes the live session."""
+        (``superseded``, gateway/session_route_recovery.py). *sid*'s own becomes the live session once
+        it sits on *route*: a mount still on another chat's route (a cross-chat ``/resume``) would reach
+        that chat's conversation, so it stays read-only until ``_publish_route`` moves it here."""
         for other_sid, other in self.sessions.items():
             if other.route == route and other_sid != sid:
                 other.superseded = True
-        if (live := self.sessions.get(sid)) is not None:
+        if (live := self.sessions.get(sid)) is not None and live.route == route:
             live.superseded = False
 
     def agent(self, ref):
