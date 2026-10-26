@@ -110,6 +110,7 @@ def _mount_plan(authority, sid):
 def restore_routed_session(authority, sid):
     """Publish *sid* as its lane would after a restart; None when this row is not one a route or a
     messaging-platform row can stand for."""
+    from gateway.session_authority import LiveSession
     from gateway.session_contract import SessionRef
     plan = _mount_plan(authority, sid)
     if plan is None:
@@ -120,29 +121,8 @@ def restore_routed_session(authority, sid):
     # Re-pin the persisted receiving bot so delivery after a restart goes through it or nowhere,
     # never the default bot by heuristic (gateway/AGENTS.md § Identity survives the process).
     source = authority.runner._restored_source(entry)
-    authority.sessions.setdefault(sid, mount(authority, sid, source, route, superseded=superseded,
-                                             history_mount=True))
+    authority.sessions.setdefault(sid, LiveSession(source, route, superseded=superseded))
     return SessionRef(authority.profile_id, sid)
-
-
-def mount(authority, sid, source, route, **flags):
-    """The live entry of *sid* on *route*, however it is mounted (the lane's inbound, startup recovery
-    of its queued input, a cold open, an automation wake): ``handed_off`` comes from the row
-    (``moved_local``), so a moved local conversation goes read-only once its lane takes up another
-    one, whichever path mounted it first (#143286)."""
-    from gateway.session_authority import LiveSession
-    return LiveSession(source, route, handed_off=moved_local(authority, sid, source), **flags)
-
-
-def moved_local(authority, sid, source):
-    """*sid* is a local conversation (created by a local surface) published on a messaging lane:
-    ``/handoff`` or a platform ``/resume`` moved it there. That provenance is the row's, not the
-    path that mounts it (the Desktop that followed it, the lane's inbound, a cold open), so every
-    mount of it goes read-only once the lane takes up another conversation (#143286)."""
-    from hermes_state_local_migration import LEGACY_LOCAL_SOURCES
-    if source is None or source.platform == Platform.LOCAL:
-        return False
-    return (authority.db.get_session(sid) or {}).get('created_source') in LEGACY_LOCAL_SOURCES
 
 
 def mountable(authority, sid):
@@ -209,6 +189,6 @@ def follow_hand_off(authority, source, route, owner, local_owner):
     if held is None or held.source is None or held.source.platform != Platform.LOCAL:
         held = None
     elif local_owner != owner:
-        held.source, held.route, held.handed_off = source, route, True
+        held.source, held.route = source, route
     if held is not None or owner in authority.sessions:
         authority._publish_route(source, owner, route)

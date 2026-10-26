@@ -72,19 +72,11 @@ class LiveSession:
     # (principal, effort) of a ``/reasoning`` command that arrived while a turn ran: applied in memory at
     # once, committed to the policy at the next boundary (gateway/session_setting_commands.py).
     pending_reasoning: tuple | None = None
-    # A historic messaging row mounted for reading after its lane moved on (``/new``): ``route`` is
-    # the lane's CURRENT key, which names another conversation, so nothing route-keyed (agent, Stop,
-    # turns, eviction) may act through it (gateway/session_route_recovery.py). The lane publishing
-    # this row again clears it.
+    # A messaging conversation its lane moved past (``/new``, ``/resume``, its next inbound naming
+    # another conversation): ``route`` is the lane's CURRENT key, which names that other conversation,
+    # so nothing route-keyed (agent, Stop, turns, eviction) may act through it (``name_lane``,
+    # gateway/session_route_recovery.py). The lane naming this conversation again clears it.
     superseded: bool = False
-    # Mounted by that cold path (not published by its lane): the lane publishing ANOTHER conversation
-    # on the same route later supersedes it too.
-    history_mount: bool = False
-    # A local conversation a messaging lane took over (``/handoff``, a platform ``/resume``): its
-    # viewers follow it onto the lane, and once that lane publishes another conversation (``/new``,
-    # another handoff) it is superseded like a history mount, whatever the lane published since.
-    # Set from the row (``moved_local``) on every mount of it, however constructed (#143286).
-    handed_off: bool = False
     # The background-review guard of a cold ``/refine`` (gateway/session_refine.py): its side agent is
     # per call, so the run token lives here; a second /refine joins it and the next turn cancels it.
     review: SimpleNamespace = field(default_factory=SimpleNamespace)
@@ -273,35 +265,30 @@ class SessionAuthority:
         return sid, entry.session_key
 
     def _publish_route(self, source, sid, route):
-        from gateway.config import Platform
         self._require_admission_open()
         live = self.sessions.get(sid)
         if live is None:
-            from gateway.session_route_recovery import mount
-            live = self.sessions[sid] = mount(self, sid, source, route)
+            self.sessions[sid] = LiveSession(source, route)
         elif live.route != route:
             # *sid* moved lanes: ``/handoff`` or a platform ``/resume`` took a local conversation over
             # (its repoint retired the local receipt), or a ``/resume`` moved it on to another chat.
             # Its open viewers follow it, so a turn or a Stop through this mount reaches the lane that
             # holds it now, never the conversation that replaced it on the old one (#143286).
-            from gateway.session_route_recovery import moved_local
-            left_local = live.source is not None and live.source.platform == Platform.LOCAL
-            live.handed_off = (live.handed_off or (left_local and source.platform != Platform.LOCAL)
-                               or moved_local(self, sid, source))
             live.source, live.route = source, route
         self.name_lane(route, sid)
         return SessionRef(self.profile_id, sid)
 
     def name_lane(self, route, sid):
         """The messaging lane on *route* now names conversation *sid* (its next inbound, ``/new``,
-        ``/resume``). Every other live session on the route, a view kept open or a cold history mount,
-        is another conversation's, so nothing route-keyed acts through it: it goes read-only
+        ``/resume``, ``/handoff``). Every other live session on the route (a view kept open, a cold
+        history mount, a local chat handed off earlier) is another conversation's, so nothing
+        route-keyed acts through it: it goes read-only
         (``superseded``, gateway/session_route_recovery.py). *sid*'s own becomes the live session."""
         for other_sid, other in self.sessions.items():
             if other.route == route and other_sid != sid:
                 other.superseded = True
         if (live := self.sessions.get(sid)) is not None:
-            live.superseded = live.history_mount = False
+            live.superseded = False
 
     def agent(self, ref):
         live = self.sessions[ref.session_id]
@@ -657,9 +644,7 @@ class SessionAuthority:
                         check_local_input(
                             self, SessionRef(self.profile_id, sid), row, source=source)
                 self._require_admission_open()
-                if sid not in self.sessions:  # ``mount``: a moved local chat keeps ``handed_off`` here too
-                    from gateway.session_route_recovery import mount
-                    self.sessions[sid] = mount(self, sid, source, route)
+                self.sessions.setdefault(sid, LiveSession(source, route))
                 if any(row['status'] == 'unknown' for row in rows):
                     raise RuntimeStoreError('unknown_execution')
                 self._schedule(SessionRef(self.profile_id, sid))
