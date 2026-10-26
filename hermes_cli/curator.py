@@ -386,9 +386,11 @@ def _cmd_backup(args) -> int:
 
 def _cmd_ledger(args) -> int:
     """List per-mutation audit ledger entries (newest first), or compact the file in place."""
-    import json as _json
     from tools import skill_ledger
     if getattr(args, "compact", False):
+        if getattr(args, "json", False):
+            from hermes_cli.cli_json import json_error
+            json_error("curator ledger: --json lists entries and cannot be combined with --compact")
         entries, before, after = skill_ledger.compact_ledger()
         blobs, freed = skill_ledger.gc_blobs()
         print(f"curator: ledger compacted — {entries} entries, {before / 2**20:.1f} MB → {after / 2**20:.1f} MB; "
@@ -399,9 +401,10 @@ def _cmd_ledger(args) -> int:
     if getattr(args, "json", False):
         # Entries verbatim: `ts` is already ISO-8601 with offset, and the table's
         # relative "21m ago" is a rendering, not data. Emitted before the empty
-        # check so a consumer always parses an array — "ledger is empty" is a
+        # check so a consumer always parses a document — "ledger is empty" is a
         # sentence for humans, not something `json.loads` can read.
-        print(_json.dumps(rows, indent=2, ensure_ascii=False))
+        from hermes_cli.cli_json import print_json_document
+        print_json_document({"entries": rows})
         return 0
     if not rows:
         print("curator: ledger is empty (or skills.ledger is disabled).")
@@ -702,7 +705,7 @@ _SUBCOMMANDS = (
         _arg("--skill", default=None, help="Only show entries for this skill"),
         _arg("--limit", type=int, default=20, help="Max entries to show (default: 20)"),
         _arg("--json", **_STORE_TRUE,
-             help="Emit the entries as a JSON array instead of the table; "
+             help="Print one JSON document (schema_version 1) instead of the table; "
                   "timestamps are absolute (ISO-8601 with offset)"),
         _arg("--compact", **_STORE_TRUE,
              help="Rewrite the ledger dropping unchanged paths from every entry (ids and rollback preserved)")),

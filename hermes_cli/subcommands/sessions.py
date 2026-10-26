@@ -44,9 +44,11 @@ def build_sessions_parser(subparsers, *, cmd_sessions: Callable) -> None:
         help="Only sessions in one workspace: a git repo root or project dir "
         "(matched by path substring or basename).")
 
-    sessions_list.add_argument(
+    list_output = sessions_list.add_mutually_exclusive_group()
+    list_output.add_argument(
         "--format", choices=("table", "json", "tsv"), default="table",
         help="Output format for sessions list (default: table)")
+    add_json_flag(list_output, "Print one JSON document (schema_version 1); same as --format json")
 
     _filter_args = (
         ("--newer-than", dict(metavar="AGE", help="Only match sessions active within the last AGE "

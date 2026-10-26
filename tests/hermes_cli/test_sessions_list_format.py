@@ -32,12 +32,16 @@ def _seed(db, session_id, *, source="cli", workspace=None, title=None):
 def test_machine_output_selection_schema_and_empty_store(tmp_path, monkeypatch, capsys, output_format):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     header = "id\ttitle\tpreview\tlast_active\tsource\n"
-    empty = "[]\n" if output_format == "json" else header
-    assert _run_list(capsys, "--format", output_format) == empty
+    def _is_empty(out):
+        if output_format == "tsv":
+            return out == header
+        return json.loads(out) == {"schema_version": 1, "sessions": [], "truncated": False}
+
+    assert _is_empty(_run_list(capsys, "--format", output_format))
     assert not (tmp_path / "state.db").exists()
 
     with SessionDB() as db:
-        assert _run_list(capsys, "--format", output_format) == empty
+        assert _is_empty(_run_list(capsys, "--format", output_format))
         _seed(db, "session-alpha", workspace="/work/alpha", title="Project Alpha")
         _seed(db, "session-beta", workspace="/work/beta")
         _seed(db, "session-tool", source="tool")
@@ -51,9 +55,12 @@ def test_machine_output_selection_schema_and_empty_store(tmp_path, monkeypatch, 
         ]:
             output = _run_list(capsys, "--format", output_format, *options)
             if output_format == "json":
-                records = json.loads(output)
+                document = json.loads(output)
+                assert next(iter(document)) == "schema_version"
+                assert document["truncated"] is (options == ["--limit", "1"])
+                records = document["sessions"]
                 for record in records:
-                    assert set(record) == {"id", "title", "preview", "last_active", "source"}
+                    assert set(record) == {*sessions_cmd._SESSION_JSON_FIELDS, "workspace"}
                     assert record["preview"] == "hello\tworld again 終"
                     assert isinstance(record["last_active"], (int, float))
                     assert record["title"] == ("Project Alpha" if record["id"] == "session-alpha" else None)
@@ -69,7 +76,7 @@ def test_machine_output_selection_schema_and_empty_store(tmp_path, monkeypatch, 
             assert len(ids) == 1 if expected_ids is None else ids == expected_ids
             assert "internal prompt sentinel" not in output
             assert "system_prompt" not in output
-            assert "/work/" not in output
+            assert output_format == "json" or "/work/" not in output
             assert "more not shown" not in output
             assert output.endswith("\n")
 
@@ -88,3 +95,14 @@ def test_table_default_matches_explicit_format(tmp_path, monkeypatch, capsys, wo
     assert "--limit 2" in default
     assert ("Workspace" in default) == bool(workspace)
     assert "2h ago" in default
+
+
+def test_json_flag_is_format_json(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    with SessionDB() as db:
+        _seed(db, "session-alpha", workspace="/work/alpha", title="Project Alpha")
+    assert _run_list(capsys, "--json") == _run_list(capsys, "--format", "json")
+    row = json.loads(_run_list(capsys, "--json"))["sessions"][0]
+    assert (row["id"], row["workspace"], row["model"]) == ("session-alpha", "/work/alpha", "test-model")
+    with pytest.raises(SystemExit):
+        _run_list(capsys, "--json", "--format", "tsv")

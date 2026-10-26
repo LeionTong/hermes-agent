@@ -310,6 +310,11 @@ def _surface_reader(db):
 
 
 _SESSION_LIST_COLUMNS = ("id", "title", "preview", "last_active", "source")
+# ``--json`` row: an allow-list, so the system prompt, origin and chat identifiers on the row never leak.
+_SESSION_JSON_FIELDS = (
+    "id", "title", "preview", "source", "created_source", "model", "parent_session_id", "started_at",
+    "ended_at", "end_reason", "last_active", "message_count", "input_tokens", "output_tokens",
+)
 
 
 def _clean_tsv_cell(value) -> str:
@@ -319,10 +324,19 @@ def _clean_tsv_cell(value) -> str:
     return str(value).replace("\t", " ").replace("\r", " ").replace("\n", " ")
 
 
-def _print_sessions_machine(sessions, output_format):
+def _list_format(args) -> str:
+    return "json" if getattr(args, "json", False) else getattr(args, "format", "table")
+
+
+def _print_sessions_machine(sessions, output_format, *, truncated=False):
     if output_format == "json":
-        records = [{column: s.get(column) for column in _SESSION_LIST_COLUMNS} for s in sessions]
-        print(json.dumps(records, ensure_ascii=False))
+        from hermes_cli.cli_json import print_json_document
+        from hermes_state_sessions import workspace_key
+        print_json_document({
+            "sessions": [{**{f: s.get(f) for f in _SESSION_JSON_FIELDS}, "workspace": workspace_key(s) or None}
+                         for s in sessions],
+            "truncated": truncated,
+        })
     elif output_format == "tsv":
         print("\t".join(_SESSION_LIST_COLUMNS))
         for s in sessions:
@@ -348,9 +362,9 @@ def _cmd_list(db, args):
         sessions = [
             s for s, key in keyed if key and (_needle in key or _needle == os.path.basename(key.rstrip("/\\")))
         ]
-    output_format = getattr(args, "format", "table")
+    output_format = _list_format(args)
     if output_format in ("json", "tsv"):
-        _print_sessions_machine(sessions, output_format)
+        _print_sessions_machine(sessions, output_format, truncated=truncated)
         return
     if not sessions:
         print("No sessions found.")
@@ -1384,8 +1398,8 @@ def _print_empty_store(action: str, args) -> None:
     """A profile that never created state.db: report empty instead of opening a writer that creates it."""
     if action == "stats":
         print("Total sessions: 0\nTotal messages: 0")
-    elif action == "list" and getattr(args, "format", "table") in ("json", "tsv"):
-        _print_sessions_machine([], args.format)
+    elif action == "list" and _list_format(args) in ("json", "tsv"):
+        _print_sessions_machine([], _list_format(args))
     elif action == "pinned":
         print("[]" if getattr(args, "json", False) else "No pinned sessions. Pin one with: hermes sessions pin <session_id>")
     else:

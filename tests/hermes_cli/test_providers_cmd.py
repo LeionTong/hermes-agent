@@ -85,7 +85,7 @@ def test_json_document_shape(monkeypatch, capsys):
     code, out, err = _run(monkeypatch, capsys, ["providers", "list", "--offline", "--json", "--provider", "local"])
     doc = json.loads(out)
     assert code == 0 and err == ""
-    assert list(doc)[0] == "schema_version" and doc["schema_version"] == 1
+    assert next(iter(doc)) == "schema_version" and doc["schema_version"] == 1
     assert doc["offline"] is True and doc["current"] == {"provider": "local", "model": "m1"}
     assert doc["providers"] == [{
         "id": "local", "name": "Local", "auth_state": "configured", "auth_type": "api_key",
