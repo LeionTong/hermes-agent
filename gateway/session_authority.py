@@ -276,8 +276,6 @@ class SessionAuthority:
         from gateway.config import Platform
         self._require_admission_open()
         live = self.sessions.get(sid)
-        # *sid* takes the route over: new here, moved onto it, or back after another conversation had it.
-        took_over = live is None or live.route != route or live.superseded
         if live is None:
             from gateway.session_route_recovery import mount
             live = self.sessions[sid] = mount(self, sid, source, route)
@@ -291,16 +289,19 @@ class SessionAuthority:
             live.handed_off = (live.handed_off or (left_local and source.platform != Platform.LOCAL)
                                or moved_local(self, sid, source))
             live.source, live.route = source, route
-        if took_over:
-            # The lane moved on to *sid*: a cold history mount or a chat handed off earlier that is
-            # still on its route is now another conversation's, so it goes read-only
-            # (gateway/session_route_recovery.py): a Stop or turn through it would act on *sid*.
-            for other in self.sessions.values():
-                if (other.history_mount or other.handed_off) and other.route == route and other is not live:
-                    other.superseded = True
-        # The lane itself names *sid* (again): a historic mount becomes its live session.
-        live.superseded = live.history_mount = False
+        self.name_lane(route, sid)
         return SessionRef(self.profile_id, sid)
+
+    def name_lane(self, route, sid):
+        """The messaging lane on *route* now names conversation *sid* (its next inbound, ``/new``,
+        ``/resume``). Every other live session on the route, a view kept open or a cold history mount,
+        is another conversation's, so nothing route-keyed acts through it: it goes read-only
+        (``superseded``, gateway/session_route_recovery.py). *sid*'s own becomes the live session."""
+        for other_sid, other in self.sessions.items():
+            if other.route == route and other_sid != sid:
+                other.superseded = True
+        if (live := self.sessions.get(sid)) is not None:
+            live.superseded = live.history_mount = False
 
     def agent(self, ref):
         live = self.sessions[ref.session_id]
