@@ -45,9 +45,17 @@ def test_review_i_update_sees_the_handoff_run_id(tmp_path: Path, stale: str) -> 
     (install / 'hermes_cli/desktop_update_verify.py').write_text('pass\n', encoding='utf-8')
     home = tmp_path / 'home'
     home.mkdir()
-    desktop = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(8)'])
+    desktop = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(14)'])
     started = int(time.time()) - 5
-    ct = _creation_time(desktop.pid)
+    ct = None
+    for _ in range(20):
+        time.sleep(0.5)
+        try:
+            ct = _creation_time(desktop.pid)
+            break
+        except subprocess.CalledProcessError as exc:
+            last = exc.stderr
+    assert ct, last
     (home / MARKER).write_bytes(f'{desktop.pid}\n{started}\nct:{ct}\nrun:{RUN}\n'.encode())
     corr_out = tmp_path / 'corr.txt'
     env = {**os.environ, 'HERMES_HOME': str(home), 'HERMES_RUNTIME_DIR': str(tmp_path / 'empty-store'),

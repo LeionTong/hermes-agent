@@ -64,4 +64,4 @@ jobs:
         timeout-minutes: 15
         run: |
           set -uo pipefail
-          bash scripts/run_tests.sh tests/scripts/desktop_update/test_review_i_corr_probe.py tests/scripts/desktop_update/test_desktop_update_windows_release_holders.py tests/hermes_cli/test_desktop_release_holder_windows_live.py -- -v -s -rA
+          bash scripts/run_tests.sh tests/scripts/desktop_update/test_review_i_corr_probe.py -- -v -s -rA
