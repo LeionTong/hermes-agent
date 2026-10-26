@@ -40,7 +40,7 @@ def test_machine_output_selection_schema_and_empty_store(tmp_path, monkeypatch, 
     assert _is_empty(_run_list(capsys, "--format", output_format))
     assert not (tmp_path / "state.db").exists()
 
-    with SessionDB() as db:
+    with SessionDB(db_path=tmp_path / "state.db") as db:
         assert _is_empty(_run_list(capsys, "--format", output_format))
         _seed(db, "session-alpha", workspace="/work/alpha", title="Project Alpha")
         _seed(db, "session-beta", workspace="/work/beta")
@@ -87,7 +87,7 @@ def test_table_default_matches_explicit_format(tmp_path, monkeypatch, capsys, wo
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     assert _run_list(capsys) == _run_list(capsys, "--format", "table") == "No sessions found.\n"
     monkeypatch.setattr(sessions_cmd, "_relative_time", lambda *a, **kw: "2h ago")
-    with SessionDB() as db:
+    with SessionDB(db_path=tmp_path / "state.db") as db:
         _seed(db, "session-alpha", workspace=workspace, title=title)
         _seed(db, "session-beta", workspace=workspace)
     default = _run_list(capsys, "--limit", "1")
@@ -99,7 +99,7 @@ def test_table_default_matches_explicit_format(tmp_path, monkeypatch, capsys, wo
 
 def test_json_flag_is_format_json(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    with SessionDB() as db:
+    with SessionDB(db_path=tmp_path / "state.db") as db:
         _seed(db, "session-alpha", workspace="/work/alpha", title="Project Alpha")
     assert _run_list(capsys, "--json") == _run_list(capsys, "--format", "json")
     row = json.loads(_run_list(capsys, "--json"))["sessions"][0]
