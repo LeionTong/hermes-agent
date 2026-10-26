@@ -61,9 +61,10 @@ def test_profile_list_json_envelope(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     default = tmp_path / ".hermes"
     (default / "profiles" / "work").mkdir(parents=True)
-    (default / "config.yaml").write_text("model:\n  provider: openrouter\n  default: example/model\n")
-    (default / ".env").write_text("OPENROUTER_API_KEY=sk-secret-value\n")
-    (default / "SOUL.md").write_text("SOUL-CONTENT")
+    (default / "profiles" / "work" / "config.yaml").write_text("model:\n  default: other/model\n", encoding="utf-8")
+    (default / "config.yaml").write_text("model:\n  provider: openrouter\n  default: example/model\n", encoding="utf-8")
+    (default / ".env").write_text("OPENROUTER_API_KEY=sk-secret-value\n", encoding="utf-8")
+    (default / "SOUL.md").write_text("SOUL-CONTENT", encoding="utf-8")
     monkeypatch.setenv("HERMES_HOME", str(default))
     from hermes_cli.profile_cmd import cmd_profile
 
